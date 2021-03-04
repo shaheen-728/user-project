@@ -1,10 +1,15 @@
-import datetime,hashlib,uuid,functools,logging,json
+import datetime
+import hashlib
+import uuid
+import functools
+import logging
+import json
 from flask import jsonify, abort
 from .extensions import g
-from .users_models import Users, EducationDetails
-from .serializers import UsersSchema, EducationDetailsSchema
+from .tag.models import Tag, SubTag, TagDomain, Domain
+from .user.models import Users
 from datetime import timedelta
-from .db_transactions import add_data, delete_data
+
 
 
 def convert_list_to_dict(lst, key_name, appendtype ='list'):
@@ -26,27 +31,29 @@ def hash_password(password):
     return one_time_hash
 
 
-def create(create_obj, id=None):
+def create(create_obj, id=None, created_at=None):
     if not id:
         uuid_id = uuid.uuid4()
         create_obj.id = uuid_id
     else:
         create_obj.id = id
-    create_obj.created_at = datetime.datetime.now()
+    if not created_at:
+        create_obj.created_at = datetime.datetime.now()
+    else:
+        create_obj.created_at = created_at
     g.session.add(create_obj)
-    add_data(create_obj)
+    g.session.commit()
 
 
 def update(updated_object):
     g.session.merge(updated_object)
-    g.session.flush()
+    g.session.commit()
     return updated_object
 
 
 def delete(delete_obj):
-    if delete_obj is not None:
-        delete_data(delete_obj)
-
+    g.session.delete(delete_obj)
+    g.session.commit()
 
 def search_api(search_obj, entity):
     return fetch_list(entity, search_obj)
@@ -71,7 +78,6 @@ def bulk_create(obj_list, entity):
         list_obj.append(create_obj)
     g.session.add_all(list_obj)
     g.session.commit()
-    g.session.flush()
     return list_obj
 
 
@@ -250,3 +256,56 @@ def add_lists_with_none(list1, list2):
     return list1 + list2
 
 
+def dict_array_to_dict_of_value_arrays(my_list, key_col, value_col, none=True):
+    new_dict = {}
+    for curr_element in my_list:
+        if curr_element[key_col] not in new_dict.keys():
+            new_dict[curr_element[key_col]] = []
+        if curr_element[value_col] == None and none == True:
+            continue
+        new_dict[curr_element[key_col]].append(curr_element[value_col])
+    return new_dict
+
+
+def get_question_options_util(question_ids):
+    option_data = g.session.query(Option.question_id, Option.option_text).filter \
+        (Option.question_id.in_(question_ids)).all()
+    option_data = [(str(x[0]), x[1]) for x in option_data]
+    options_dict = convert_tuple_to_space_separated_text_dict(option_data)
+    return options_dict
+
+
+def test_admin(user_id):
+    user_type = fetch_obj(Users, {'id': user_id}).user_type
+    return user_type == 'Admin'
+
+
+def get_domains_by_tags(tag_ids, tag_dict = False):
+    if tag_dict:
+        tag_domain_query = g.session.query(TagDomain)
+    else:
+        tag_domain_query = g.session.query(TagDomain.domain_id)
+    if tag_ids is not None:
+        tag_domain_query = tag_domain_query.filter(TagDomain.tag_id.in_(tag_ids))
+    if tag_dict:
+        domain_by_tag_dict= {}
+        tag_domains = tag_domain_query.all()
+        for tag_domain in tag_domains:
+            tag_id = str(tag_domain.tag_id)
+            if tag_id not in domain_by_tag_dict:
+                domain_by_tag_dict[tag_id] = []
+            domain_by_tag_dict[tag_id].append(tag_domain.domain_id)
+        return domain_by_tag_dict
+    domain_ids = [str(x[0]) for x in tag_domain_query.all()]
+    domain_list = [serialize_to_json(x) for x in g.session.query(Domain).filter(Domain.id.in_(domain_ids)).all()]
+    return domain_list
+
+
+def group_pairs_list(input_list):
+    all_keys = set([x[0] for x in input_list])
+    elements_dict = {}
+    for curr_key in all_keys:
+        elements_dict[str(curr_key)] = []
+    for pair in input_list:
+        elements_dict[str(pair[0])].append(pair[1])
+    return elements_dict

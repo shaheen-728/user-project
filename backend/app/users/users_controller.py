@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from flask import render_template
 from .users_models import Users, EducationDetails, EmailSettings
 from ..extensions import app, g
-from .utils import create, fetch, fetch_list, hash_password, serialize_to_json
+from ..utils import create, fetch, fetch_list, hash_password, serialize_to_json
 
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
